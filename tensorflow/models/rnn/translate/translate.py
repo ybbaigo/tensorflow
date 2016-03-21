@@ -41,9 +41,10 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow.models.rnn.translate import data_utils
+import data_utils
 from tensorflow.models.rnn.translate import seq2seq_model
 
+base_path = "/home/yy/data/shooter.51936914"
 
 tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
@@ -56,8 +57,8 @@ tf.app.flags.DEFINE_integer("size", 1024, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("num_layers", 3, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 40000, "French vocabulary size.")
-tf.app.flags.DEFINE_string("data_dir", "/tmp", "Data directory")
-tf.app.flags.DEFINE_string("train_dir", "/tmp", "Training directory.")
+tf.app.flags.DEFINE_string("data_dir", base_path, "Data directory")
+tf.app.flags.DEFINE_string("train_dir", base_path, "Training directory.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -72,6 +73,16 @@ FLAGS = tf.app.flags.FLAGS
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
 _buckets = [(5, 10), (10, 15), (20, 25), (40, 50)]
+
+
+def jieba_tokenizer(sentence):
+  import jieba 
+
+  words = [] 
+  for word in jieba.lcut(sentence.strip()):
+    words.append(word.encode('utf-8')) 
+
+  return words  
 
 
 def read_data(source_path, target_path, max_size=None):
@@ -134,7 +145,7 @@ def train():
   # Prepare WMT data.
   print("Preparing WMT data in %s" % FLAGS.data_dir)
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
-      FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
+      FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size, tokenizer = jieba_tokenizer)
 
   with tf.Session() as sess:
     # Create model.
