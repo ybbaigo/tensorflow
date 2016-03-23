@@ -72,6 +72,8 @@ from tensorflow.python.ops import rnn
 from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 
+import tensorflow as tf
+
 
 def rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
                 scope=None):
@@ -510,6 +512,7 @@ def attention_decoder(decoder_inputs, initial_state, attention_states, cell,
 
     outputs = []
     prev = None
+    prob = None
     batch_attn_size = array_ops.pack([batch_size, attn_size])
     attns = [array_ops.zeros(batch_attn_size, dtype=dtype)
              for _ in xrange(num_heads)]
@@ -523,7 +526,8 @@ def attention_decoder(decoder_inputs, initial_state, attention_states, cell,
       # If loop_function is set, we use it instead of decoder_inputs.
       if loop_function is not None and prev is not None:
         with variable_scope.variable_scope("loop_function", reuse=True):
-          inp = array_ops.stop_gradient(loop_function(prev, i))
+          inp, prob = loop_function(prev, i)
+          inp = array_ops.stop_gradient(inp)
       # Merge input and previous attentions into one vector of the right size.
       x = rnn_cell.linear([inp] + attns, cell.input_size, True)
       # Run the RNN.
@@ -543,7 +547,7 @@ def attention_decoder(decoder_inputs, initial_state, attention_states, cell,
         prev = array_ops.stop_gradient(output)
       outputs.append(output)
 
-  return outputs, state
+  return prob, outputs, state
 
 
 def embedding_attention_decoder(decoder_inputs, initial_state, attention_states,
@@ -608,9 +612,10 @@ def embedding_attention_decoder(decoder_inputs, initial_state, attention_states,
       if output_projection is not None:
         prev = nn_ops.xw_plus_b(
             prev, output_projection[0], output_projection[1])
+      values, indices = tf.nn.top_k(tf.log(tf.nn.softmax(prev)))
       prev_symbol = array_ops.stop_gradient(math_ops.argmax(prev, 1))
       emb_prev = embedding_ops.embedding_lookup(embedding, prev_symbol)
-      return emb_prev
+      return emb_prev, values
 
     loop_function = extract_argmax_and_embed if feed_previous else None
     emb_inp = [
@@ -695,7 +700,7 @@ def embedding_attention_seq2seq(encoder_inputs, decoder_inputs, cell,
       reuse = None if feed_previous_bool else True
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=reuse):
-        outputs, state = embedding_attention_decoder(
+        _, outputs, state = embedding_attention_decoder(
             decoder_inputs, encoder_state, attention_states, cell,
             num_decoder_symbols, num_heads=num_heads, output_size=output_size,
             output_projection=output_projection,
@@ -706,7 +711,7 @@ def embedding_attention_seq2seq(encoder_inputs, decoder_inputs, cell,
     outputs_and_state = control_flow_ops.cond(feed_previous,
                                               lambda: decoder(True),
                                               lambda: decoder(False))
-    return outputs_and_state[:-1], outputs_and_state[-1]
+    return None, outputs_and_state[:-1], outputs_and_state[-1]
 
 
 def one2many_rnn_seq2seq(encoder_inputs, decoder_inputs_dict, cell,
@@ -923,7 +928,7 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
-        bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]],
+        prob, bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]],
                                     decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         if per_example_loss:
@@ -935,4 +940,4 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
-  return prob, outputs, losses
+  return  prob, outputs, losses

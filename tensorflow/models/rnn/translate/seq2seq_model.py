@@ -26,7 +26,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow.models.rnn import rnn_cell
-from tensorflow.models.rnn import seq2seq
+import seq2seq
 
 from tensorflow.models.rnn.translate import data_utils
 
@@ -133,7 +133,7 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
-      self.outputs, self.losses = seq2seq.model_with_buckets(
+      self.prob, self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
           softmax_loss_function=softmax_loss_function)
@@ -145,7 +145,7 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      self.outputs, self.losses = seq2seq.model_with_buckets(
+      _, self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: seq2seq_f(x, y, False),
@@ -218,14 +218,16 @@ class Seq2SeqModel(object):
                      self.losses[bucket_id]]  # Loss for this batch.
     else:
       output_feed = [self.losses[bucket_id]]  # Loss for this batch.
+      output_feed.append(self.prob)
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
+
 
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
       return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
     else:
-      return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
+      return outputs[1], outputs[0], outputs[2:]  # No gradient norm, loss, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.
