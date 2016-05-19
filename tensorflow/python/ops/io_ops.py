@@ -21,6 +21,12 @@ on execution.  For more info, see the section on [Feeding
 data](../../how_tos/reading_data/index.md#feeding).
 
 @@placeholder
+@@placeholder_with_default
+
+For feeding `SparseTensor`s which are composite type,
+there is a convenience function:
+
+@@sparse_placeholder
 
 ## Readers
 
@@ -91,6 +97,7 @@ The "producer" functions add a queue to the graph and a corresponding
 
 @@match_filenames_once
 @@limit_epochs
+@@input_producer
 @@range_input_producer
 @@slice_input_producer
 @@string_input_producer
@@ -130,6 +137,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import common_shapes
 from tensorflow.python.ops import gen_io_ops
+# go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.ops.gen_io_ops import *
 # pylint: enable=wildcard-import

@@ -25,7 +25,6 @@ from __future__ import print_function
 import inspect
 import os
 import re
-import sys
 
 
 _arg_re = re.compile(" *([*]{0,2}[a-zA-Z][a-zA-Z0-9_]*):")
@@ -33,6 +32,7 @@ _section_re = re.compile("([A-Z][a-zA-Z ]*):$")
 _always_drop_symbol_re = re.compile("_[_a-zA-Z0-9]")
 _anchor_re = re.compile(r"^[\w.]+$")
 _member_mark = "@@"
+_indiv_dir = "functions_and_classes"
 
 
 class Document(object):
@@ -87,8 +87,8 @@ class Index(Document):
     for filename, library in self._filename_to_library_map:
       sorted_names = sorted(library.mentioned, key=lambda x: (str.lower(x), x))
       member_names = [n for n in sorted_names if n in self._members]
-      # TODO: This is a hack that should be removed as soon as the website code
-      # allows it.
+      # TODO(wicke): This is a hack that should be removed as soon as the
+      # website code allows it.
       full_filename = self._path_prefix + filename
       links = ["[`%s`](%s#%s)" % (name, full_filename, anchor_f(name))
                for name in member_names]
@@ -99,14 +99,18 @@ class Index(Document):
         print("", file=f)
 
 
-def collect_members(module_to_name):
+def collect_members(module_to_name, exclude=()):
   """Collect all symbols from a list of modules.
 
   Args:
     module_to_name: Dictionary mapping modules to short names.
+    exclude: Set of fully qualified names to exclude.
 
   Returns:
     Dictionary mapping name to (fullname, member) pairs.
+
+  Raises:
+    RuntimeError: if we can not resolve a name collision.
   """
   members = {}
   for module, module_name in module_to_name.items():
@@ -115,7 +119,9 @@ def collect_members(module_to_name):
       if ((inspect.isfunction(member) or inspect.isclass(member)) and
           not _always_drop_symbol_re.match(name) and
           (all_names is None or name in all_names)):
-        fullname = '%s.%s' % (module_name, name)
+        fullname = "%s.%s" % (module_name, name)
+        if fullname in exclude:
+          continue
         if name in members:
           other_fullname, other_member = members[name]
           if member is not other_member:
@@ -205,7 +211,7 @@ class Library(Document):
     """Set of excluded symbols."""
     return self._exclude_symbols
 
-  def _should_include_member(self, name, member):
+  def _should_include_member(self, name):
     """Returns True if this member should be included in the document."""
     # Always exclude symbols matching _always_drop_symbol_re.
     if _always_drop_symbol_re.match(name):
@@ -241,8 +247,17 @@ class Library(Document):
       if not (is_method or isinstance(member, property)):
         continue
       if ((is_method and member.__name__ == "__init__")
-          or self._should_include_member(name, member)):
+          or self._should_include_member(name)):
         yield name, ("%s.%s" % (cls_name, name), member)
+
+  def set_functions_and_classes_dir(self, dirname):
+    """Sets the name of the directory for function and class markdown files.
+
+    Args:
+      dirname: string. The name of the directory in which to store function
+        and class markdown files.
+    """
+    self.functions_and_classes_dir = dirname
 
   def _generate_signature_for_function(self, func):
     """Given a function, returns a string representing its args."""
@@ -381,6 +396,12 @@ class Library(Document):
       print("", file=f)
       self._print_function(f, prefix, name, member)
       print("", file=f)
+
+      # Write an individual file for each function.
+      if inspect.isfunction(member):
+        indivf = open(
+            os.path.join(self.functions_and_classes_dir, name + ".md"), "w+")
+        self._print_function(indivf, prefix, name, member)
     elif inspect.isclass(member):
       print("- - -", file=f)
       print("", file=f)
@@ -390,6 +411,11 @@ class Library(Document):
       print("", file=f)
       self._write_class_markdown_to_file(f, name, member)
       print("", file=f)
+
+      # Write an individual file for each class.
+      indivf = open(
+          os.path.join(self.functions_and_classes_dir, name + ".md"), "w+")
+      self._write_class_markdown_to_file(indivf, name, member)
     else:
       raise RuntimeError("Member %s has unknown type %s" % (name, type(member)))
 
@@ -406,7 +432,8 @@ class Library(Document):
         elif name in imports:
           self._write_module_markdown_to_file(f, imports[name])
         else:
-          raise ValueError("%s: unknown member `%s`" % (self._title, name))
+          raise ValueError("%s: unknown member `%s`, markdown=`%s`." % (
+              self._title, name, l))
       else:
         print(l, file=f)
 
@@ -415,9 +442,8 @@ class Library(Document):
 
     Args:
       f: File to write to.
-      prefix: Prefix for names.
-      cls: class object.
       name: name to use.
+      cls: class object.
     """
     # Build the list of class methods to document.
     methods = dict(self.get_class_members(name, cls))
@@ -484,6 +510,9 @@ class Library(Document):
       names = self._members.items()
     else:
       names = inspect.getmembers(self._module)
+      all_names = getattr(self._module, "__all__", None)
+      if all_names is not None:
+        names = [(n, m) for n, m in names if n in all_names]
     leftovers = []
     for name, _ in names:
       if name in self._members and name not in self._documented:
@@ -500,7 +529,7 @@ class Library(Document):
   def assert_no_leftovers(self):
     """Generate an error if there are leftover members."""
     leftovers = []
-    for name in self._members.keys():
+    for name in self._members:
       if name in self._members and name not in self._documented:
         leftovers.append(name)
     if leftovers:
@@ -508,16 +537,24 @@ class Library(Document):
                          (self._title, ", ".join(leftovers)))
 
 
-def write_libraries(dir, libraries):
+def write_libraries(output_dir, libraries):
   """Write a list of libraries to disk.
 
   Args:
-    dir: Output directory.
+    output_dir: Output directory.
     libraries: List of (filename, library) pairs.
   """
-  files = [open(os.path.join(dir, k), "w") for k, _ in libraries]
+  files = [open(os.path.join(output_dir, k), "w") for k, _ in libraries]
+
+  # Set the directory in which to save individual class and function md files,
+  # creating it if it doesn't exist.
+  indiv_dir = os.path.join(output_dir, _indiv_dir)
+  if not os.path.exists(indiv_dir):
+    os.makedirs(indiv_dir)
+
   # Document mentioned symbols for all libraries
   for f, (_, v) in zip(files, libraries):
+    v.set_functions_and_classes_dir(indiv_dir)
     v.write_markdown_to_file(f)
   # Document symbols that no library mentioned.  We do this after writing
   # out all libraries so that earlier libraries know what later libraries

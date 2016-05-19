@@ -22,6 +22,9 @@ namespace tensorflow {
 
 void Shard(int num_workers, thread::ThreadPool* workers, int64 total,
            int64 cost_per_unit, std::function<void(int64, int64)> work) {
+#ifdef EIGEN_USE_NONBLOCKING_THREAD_POOL
+  workers->ParallelFor(total, cost_per_unit, work);
+#else
   CHECK_GE(total, 0);
   if (total == 0) {
     return;
@@ -39,8 +42,10 @@ void Shard(int num_workers, thread::ThreadPool* workers, int64 total,
   // much. Let us assume each cost unit is 1ns, kMinCostPerShard=10000
   // is 10us.
   static const int64 kMinCostPerShard = 10000;
-  const int num_shards = std::max(
-      1, std::min<int>(num_workers, total * cost_per_unit / kMinCostPerShard));
+  const int num_shards =
+      std::max<int>(1, std::min(static_cast<int64>(num_workers),
+                                total * cost_per_unit / kMinCostPerShard));
+
   // Each shard contains up to "block_size" units. [0, total) is sharded
   // into:
   //   [0, block_size), [block_size, 2*block_size), ...
@@ -66,6 +71,7 @@ void Shard(int num_workers, thread::ThreadPool* workers, int64 total,
   // Inline execute the 1st shard.
   work(0, std::min(block_size, total));
   counter.Wait();
+#endif
 }
 
 }  // end namespace tensorflow
