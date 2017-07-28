@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <numeric>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
@@ -31,7 +32,7 @@
 #include "tensorflow/core/lib/gtl/top_n.h"
 #include "tensorflow/core/lib/random/philox_random.h"
 #include "tensorflow/core/lib/random/simple_philox.h"
-#include "tensorflow/core/platform/host_info.h"
+#include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
@@ -374,8 +375,8 @@ class NearestNeighborsOp : public OpKernel {
       const Eigen::Ref<const Eigen::VectorXf>& points_half_squared_norm,
       const Eigen::Ref<const MatrixXfRowMajor>& centers,
       const Eigen::Ref<const Eigen::VectorXf>& centers_half_squared_norm,
-      Eigen::Ref<MatrixXi64RowMajor> nearest_center_indices,
-      Eigen::Ref<MatrixXfRowMajor> nearest_center_distances) {
+      const Eigen::Ref<MatrixXi64RowMajor>& nearest_center_indices,
+      const Eigen::Ref<MatrixXfRowMajor>& nearest_center_distances) {
     CHECK_LE(k, centers.rows());
     if (centers.rows() <= kNearestNeighborsCentersMaxBlockSize) {
       FindKNearestCentersOneBlock(k, points, points_half_squared_norm, centers,

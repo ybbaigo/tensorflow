@@ -28,9 +28,9 @@ void ExpectNodeEqual(const Node* n, gtl::ArraySlice<T> values,
                      TensorShape shape) {
   EXPECT_TRUE(n->IsConstant());
   Tensor tensor;
-  TF_EXPECT_OK(GetNodeAttr(n->def(), "value", &tensor));
+  TF_EXPECT_OK(GetNodeAttr(n->attrs(), "value", &tensor));
   DataType dtype;
-  TF_EXPECT_OK(GetNodeAttr(n->def(), "dtype", &dtype));
+  TF_EXPECT_OK(GetNodeAttr(n->attrs(), "dtype", &dtype));
   EXPECT_EQ(tensor.dtype(), dtype);
   test::ExpectTensorEqual<T>(tensor, test::AsTensor(values, shape));
 }
@@ -39,9 +39,9 @@ void ExpectTypeAndShape(const Node* n, DataType expected_dtype,
                         TensorShape expected_shape) {
   EXPECT_TRUE(n->IsConstant());
   Tensor tensor;
-  TF_EXPECT_OK(GetNodeAttr(n->def(), "value", &tensor));
+  TF_EXPECT_OK(GetNodeAttr(n->attrs(), "value", &tensor));
   DataType dtype;
-  TF_EXPECT_OK(GetNodeAttr(n->def(), "dtype", &dtype));
+  TF_EXPECT_OK(GetNodeAttr(n->attrs(), "dtype", &dtype));
   EXPECT_EQ(dtype, expected_dtype);
   EXPECT_EQ(expected_shape, TensorShape(tensor.shape()));
 }
@@ -123,6 +123,15 @@ TEST(ConstOpTest, Names) {
   EXPECT_EQ(c_y.node()->name(), "c/y");
   auto c_y_1 = ops::Const(child.WithOpName("y"), 1);
   EXPECT_EQ(c_y_1.node()->name(), "c/y_1");
+}
+
+TEST(ConstOpTest, TemplatedConst) {
+  Scope root = Scope::NewRootScope();
+  auto c1 = ops::Const<int>(root, {1, 2});
+  ExpectTypeAndShape(c1.node(), DT_INT32, {2});
+
+  auto c2 = ops::Const<string>(root, {{"this"}, {"is"}, {"a"}, {"constant"}});
+  ExpectTypeAndShape(c2.node(), DT_STRING, {4, 1});
 }
 
 }  // namespace tensorflow

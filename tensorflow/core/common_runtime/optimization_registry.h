@@ -22,12 +22,13 @@ limitations under the License.
 #include <map>
 #include <vector>
 
+#include "tensorflow/core/common_runtime/device_set.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/graph/costmodel.h"
 #include "tensorflow/core/graph/graph.h"
 
 namespace tensorflow {
-class SessionOptions;
+struct SessionOptions;
 
 // All the parameters used by an optimization pass are packaged in
 // this struct. They should be enough for the optimization pass to use
@@ -35,12 +36,27 @@ class SessionOptions;
 // calls.
 struct GraphOptimizationPassOptions {
   string session_handle;
-  const SessionOptions* session_options;
-  const CostModel* cost_model;
+  const SessionOptions* session_options = nullptr;
+  const CostModel* cost_model = nullptr;
 
-  FunctionLibraryDefinition* flib_def;  // Not owned.
+  FunctionLibraryDefinition* flib_def = nullptr;  // Not owned.
+  // The DeviceSet contains all the devices known to the system and is
+  // filled in for optimizations run by the session master, i.e.,
+  // PRE_PLACEMENT, POST_PLACEMENT, and POST_REWRITE_FOR_EXEC. It is
+  // nullptr for POST_PARTITIONING optimizations which are run at the
+  // workers.
+  const DeviceSet* device_set = nullptr;  // Not owned.
+
+  // The graph to optimize, for optimization passes that run before
+  // partitioning. Null for post-partitioning passes.
   // An optimization pass may replace *graph with a new graph object.
-  std::unique_ptr<Graph>* graph;
+  std::unique_ptr<Graph>* graph = nullptr;
+
+  // Graphs for each partition, if running post-partitioning. Optimization
+  // passes may alter the graphs, but must not add or remove partitions.
+  // Null for pre-partitioning passes.
+  std::unordered_map<string, std::unique_ptr<Graph>>* partition_graphs =
+      nullptr;
 };
 
 // Optimization passes are implemented by inheriting from
@@ -64,6 +80,7 @@ class OptimizationPassRegistry {
     PRE_PLACEMENT,          // after cost model assignment, before placement.
     POST_PLACEMENT,         // after placement.
     POST_REWRITE_FOR_EXEC,  // after re-write using feed/fetch endpoints.
+    POST_PARTITIONING,      // after partitioning
   };
 
   // Add an optimization pass to the registry.

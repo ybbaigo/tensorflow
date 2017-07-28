@@ -16,7 +16,6 @@ limitations under the License.
 #include <stdio.h>
 #include <set>
 
-#include "tensorflow/core/platform/init_main.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/types.h"
@@ -69,8 +68,6 @@ bool IsPlaceholderFile(const char* s) {
 //
 // This is meant to be invoked by a genrule. See BUILD for more information.
 int MainImpl(int argc, char** argv) {
-  tensorflow::port::InitMain(argv[0], &argc, &argv);
-
   if (argc < 4) {
     LOG(ERROR) << "Pass output path, relative path, and at least proto file";
     return -1;
@@ -133,6 +130,7 @@ int MainImpl(int argc, char** argv) {
 
       const string path = output_root + "/" + proto_path_no_suffix + suffix;
       FILE* f = fopen(path.c_str(), "w");
+      if (f == nullptr) return -1;
       if (fwrite(data.c_str(), 1, data.size(), f) != data.size()) {
         return -1;
       }
